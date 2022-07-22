@@ -27,3 +27,12 @@ requirements:
 - Pytorch 1.10.2 (with GPU support)
 - pytrec-eval 0.5
 - Transformers 4.2.0
+
+运行：进入SCL/或Ranking/目录下，
+```
+bash run.sh
+```
+或
+```
+nohup bash run.sh > run.log 2>&1 &
+```
