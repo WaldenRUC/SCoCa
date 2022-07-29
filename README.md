@@ -28,11 +28,11 @@ requirements:
 - pytrec-eval 0.5
 - Transformers 4.2.0
 
-运行：进入SCL/或Ranking/目录下，
+运行：
 ```
-bash run.sh
+bash ./SCL/run.sh
 ```
 或
 ```
-nohup bash run.sh > run.log 2>&1 &
+bash ./Ranking/run.sh
 ```

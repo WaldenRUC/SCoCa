@@ -41,7 +41,7 @@ class BertContrastive(nn.Module):
         batch_cross_12 = batch_cross_12 / self.temperature
         batch_first = torch.cat([batch_self_11, batch_cross_12], dim=-1)  # [batch, batch * 2]
         
-        if self.args.is_multiGPU == "1":    # 多卡
+        if self.args.multiGPU:    # 多卡
             batch_arange = torch.arange(batch_size).to(torch.cuda.current_device())
         else:
             batch_arange = torch.arange(batch_size).to("cuda:%s"%(self.args.device_id))

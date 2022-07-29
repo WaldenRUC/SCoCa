@@ -1,6 +1,6 @@
 import numpy as np
 import pytrec_eval
-
+defaultPath = './output/aol/BertSessionSearch.aol.score_file.txt'
 class Metrics(object):
 
     def __init__(self, score_file_path, segment=50):
@@ -49,7 +49,7 @@ class Metrics(object):
         return (np.average(map_list), np.average(mrr_list), np.average(ndcg_1_list), np.average(ndcg_3_list), np.average(ndcg_5_list), np.average(ndcg_10_list))
 
 if __name__ == '__main__':
-    metric = Metrics('./output/aol/BertSessionSearch.aol.score_file.txt')
+    metric = Metrics(defaultPath)
     result = metric.evaluate_all_metrics()
     for r in result:
         print(r)
