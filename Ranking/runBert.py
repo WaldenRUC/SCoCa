@@ -9,7 +9,7 @@ from transformers import get_linear_schedule_with_warmup, BertTokenizer, BertMod
 from Trec_Metrics import Metrics
 from file_dataset import FileDataset
 from tqdm import tqdm
-import os
+import os, setproctitle
 parser = argparse.ArgumentParser()
 parser.add_argument("--training",
                     action="store_true",
@@ -46,7 +46,7 @@ parser.add_argument("--output_path",
                     default="./Ranking/output/",
                     type=str,
                     help="The path to save model.")
-parser.add_argument("--score_file_path",        
+parser.add_argument("--score_file_path",
                     default="score_file.txt",
                     type=str,
                     help="The path to score file.")
@@ -79,23 +79,23 @@ parser.add_argument("--scheduler_used",
                     help="是否用scheduler")
 parser.add_argument("--tqdm",
                     action="store_true",
-                    help="是否使用tqdm进度条")                    
+                    help="是否使用tqdm进度条")
 args = parser.parse_args()
-#*==========================*#
+#==========================*#
 if args.multiGPU: #用多卡训练
     args.batch_size = args.per_gpu_batch_size * torch.cuda.device_count()
     args.test_batch_size = args.per_gpu_test_batch_size * torch.cuda.device_count()
 else:
     args.batch_size = args.per_gpu_batch_size
     args.test_batch_size = args.per_gpu_test_batch_size
-#*==========================*#
+#==========================*#
 result_path = "./Ranking/output/" + args.task + "/"
-args.save_path += BertSessionSearch.__name__ + "." +  args.task
+args.save_path += BertSessionSearch.__name__ + "." +  args.task + "." + args.hint
 args.log_path += BertSessionSearch.__name__ + "." + args.task + ".log"
 score_file_prefix = result_path + BertSessionSearch.__name__ + "." + args.task
-args.score_file_path = score_file_prefix + "." +  args.score_file_path
-args.score_file_pre_path = score_file_prefix + "." +  args.score_file_pre_path
-
+args.score_file_path = score_file_prefix + "." + args.hint +  "." + args.score_file_path
+args.score_file_pre_path = score_file_prefix + "." + args.hint + "." +  args.score_file_pre_path
+setproctitle.setproctitle(args.hint)
 logger = open(args.log_path, "a")
 device = torch.device("cuda:%s" % (args.device_id))
 print(args, flush=True)
@@ -103,9 +103,8 @@ logger.write("\nHyper-parameters:\n")
 args_dict = vars(args)
 for k, v in args_dict.items():
     logger.write(str(k) + "\t" + str(v) + "\n")
-logger.write("HINT" + "\t" + args.hint)
 max_seq_len = 128
-#*=================================================*#
+#=================================================*#
 if args.task == "aol":
     train_data = args.data_dir + "aol/train_line.txt"
     #test_data = "./data/aol/dev_line.txt"               #!
@@ -137,7 +136,7 @@ def set_seed(seed=0):
     torch.cuda.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
-#*=================================================*#
+#=================================================*#
 def train_model():
     bert_model = BertModel.from_pretrained(args.bert_model_path)
     bert_model.resize_token_embeddings(bert_model.config.vocab_size + additional_tokens)
@@ -150,7 +149,7 @@ def train_model():
     if args.multiGPU:
         model = torch.nn.DataParallel(model)
     fit(model, train_data, test_data)
-#*=================================================*#
+#=================================================*#
 def train_step(model, train_data, bce_loss):
     with torch.no_grad():
         for key in train_data.keys():
@@ -159,7 +158,7 @@ def train_step(model, train_data, bce_loss):
     batch_y = train_data["labels"]
     loss = bce_loss(y_pred, batch_y)
     return loss
-#*=================================================*#
+#=================================================*#
 def fit(model, X_train, X_test):
     train_dataset = FileDataset(X_train, max_seq_len, tokenizer)
     train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=8)
@@ -177,7 +176,7 @@ def fit(model, X_train, X_test):
         avg_loss = 0
         model.train()
         if args.tqdm:
-            epoch_iterator = tqdm(train_dataloader, ncols=60)
+            epoch_iterator = tqdm(train_dataloader, ncols=120)
         else:
             epoch_iterator = train_dataloader
         for i, training_data in enumerate(epoch_iterator):
@@ -202,7 +201,7 @@ def fit(model, X_train, X_test):
             print("Average loss:{:.6f}".format(avg_loss / cnt), flush=True)
         best_result = evaluate(model, X_test, bce_loss, best_result)
     logger.close()
-#*=================================================*#
+#=================================================*#
 def evaluate(model, X_test, bce_loss, best_result, X_test_preq=None, is_test=False):
     if args.task == "aol":
         y_pred, y_label = predict(model, X_test)
@@ -237,7 +236,7 @@ def evaluate(model, X_test, bce_loss, best_result, X_test_preq=None, is_test=Fal
         if args.task == "tiangong":
             print("Previous Query Best Result: MAP: %.4f MRR: %.4f NDCG@1: %.4f NDCG@3: %.4f NDCG@5: %.4f NDCG@10: %.4f" % (result_pre[0], result_pre[1], result_pre[2], result_pre[3], result_pre[4], result_pre[5]), flush=True)
     return best_result
-#*=================================================*#
+#=================================================*#
 def predict(model, X_test, X_test_pre=None):
     model.eval()
     test_dataset = FileDataset(X_test, 128, tokenizer)
@@ -246,7 +245,7 @@ def predict(model, X_test, X_test_pre=None):
     y_label = []
     with torch.no_grad():
         if args.tqdm:
-            epoch_iterator = tqdm(test_dataloader, ncols=60, leave=False)
+            epoch_iterator = tqdm(test_dataloader, ncols=120, leave=False)
         else:
             epoch_iterator = test_dataloader
         for i, test_data in enumerate(epoch_iterator):
@@ -283,7 +282,7 @@ def predict(model, X_test, X_test_pre=None):
         return y_pred, y_label, y_pred_pre, y_label_pre
     else:
         return y_pred, y_label
-#*=================================================*#
+#=================================================*#
 def test_model():
     bert_model = BertModel.from_pretrained(args.bert_model_path)
     model = BertSessionSearch(bert_model)
@@ -297,7 +296,7 @@ def test_model():
         evaluate(model, predict_data, None, [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], is_test=True)
     elif args.task == "tiangong":
         evaluate(model, predict_last_data, None, [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], X_test_preq=predict_pre_data, is_test=True)
-#*=================================================*#
+#=================================================*#
 if __name__ == '__main__':
     set_seed()
     if args.training:

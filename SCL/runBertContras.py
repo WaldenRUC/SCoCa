@@ -8,7 +8,7 @@ from BertContrasPretrain import BertContrastive
 from transformers import BertTokenizer, BertModel, get_linear_schedule_with_warmup
 from file_preprocess_dataset import ContrasDataset
 from tqdm import tqdm
-import os
+import os, setproctitle
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--training",
@@ -83,19 +83,19 @@ parser.add_argument("--tqdm",
                     action="store_true",
                     help="是否使用tqdm进度条")
 args = parser.parse_args()
-#*==========================*#
+#==========================#
 if args.multiGPU:    #占用所有的卡
     args.batch_size = args.per_gpu_batch_size * torch.cuda.device_count()
     args.test_batch_size = args.per_gpu_test_batch_size * torch.cuda.device_count()
 else:                          #单卡，用**device_id**指定
     args.batch_size = args.per_gpu_batch_size
     args.test_batch_size = args.per_gpu_test_batch_size
-#*==========================*#
-args.save_path += BertContrastive.__name__ + "." +  args.task + "." + str(args.epochs) + "." + str(int(args.temperature * 100)) + "." + str(args.per_gpu_batch_size)
-args.loss_path = args.log_path + BertContrastive.__name__ + "." + args.task + "." + "train_cl_loss" + ".log"
+#==========================#
+args.save_path += BertContrastive.__name__ + "." +  args.task + "." + str(args.epochs) + "." + str(int(args.temperature * 100)) + "." + str(args.per_gpu_batch_size) + "." + args.hint
+args.loss_path = args.log_path + BertContrastive.__name__ + "." + args.task + "." + args.hint + ".train_cl_loss.log"
 args.log_path += BertContrastive.__name__ + "." + args.task + ".log"
-args.score_file_path = args.output_path + BertContrastive.__name__ + "." + args.task + args.score_file_path
-
+args.score_file_path = args.output_path + BertContrastive.__name__ + "." + args.task + "." + args.hint + "." + args.score_file_path
+setproctitle.setproctitle(args.hint)
 logger = open(args.log_path, "a")
 loss_logger = open(args.loss_path, "a")
 device = torch.device(f"cuda:{args.device_id}")
@@ -112,7 +112,7 @@ for k, v in args_dict.items():
     logger.write(str(k) + "\t" + str(v) + "\n")
 logger.write("HINT" + "\t" + args.hint)
 seq_max_len = 128
-#*==========================*#
+#==========================#
 if args.task == "aol":
     train_data = args.data_dir + "aol/train.pos.txt"
     test_data =  args.data_dir + "aol/dev.pos.txt"
@@ -142,7 +142,7 @@ def set_seed(seed=0):
     # some cudnn methods can be random even after fixing the seed
     # unless you tell it to be deterministic
     torch.backends.cudnn.deterministic = True
-#*=================================================*#
+#=================================================#
 def train_model():
     # load model
     '''
@@ -257,7 +257,10 @@ def predict(model, X_test):
     y_test_loss = []
     y_test_acc = []
     with torch.no_grad():
-        epoch_iterator = tqdm(test_dataloader, ncols=80, leave=False)   #* leave=False: 执行后，清除进度条
+        if args.tqdm:
+            epoch_iterator = tqdm(test_dataloader, ncols=80, leave=False)   #* leave=False: 执行后，清除进度条
+        else:
+            epoch_iterator = test_dataloader
         for i, test_data in enumerate(epoch_iterator):
             with torch.no_grad():
                 for key in test_data.keys():

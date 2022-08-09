@@ -34,7 +34,7 @@ class ContrasDataset(Dataset):
                 pairlist = self.check_length(pairlist)
         return pairlist
 
-    def anno_main(self, qd_pairs):      
+    def anno_main(self, qd_pairs):
         #*qd_pairs: (str)[q1, d1, q2, d2, ...] (i.e.) (str)[[w1, w2, ..], [w1, w2, ..], [...], [...]]
         all_qd = []
         for qd in qd_pairs: #*      qd: [w1, w2, ...]
@@ -119,6 +119,39 @@ class ContrasDataset(Dataset):
         segment_ids = np.asarray(segment_ids)
         return input_ids, all_attention_mask, segment_ids
 
+    def _term_deletion(self, sent, ratio=0.35):
+        tokens = sent.split()
+        num_to_delete = int(round(len(tokens) * ratio))
+        cand_indexes = []
+        for (i, token) in enumerate(tokens):
+            if len(cand_indexes) >= 1 and token.startswith("##"):
+                cand_indexes[-1].append(i)
+            else:
+                cand_indexes.append([i])
+        self._rnd.shuffle(cand_indexes)
+        output_tokens = list(tokens)
+        deleted_terms = []
+        covered_indexes = set()
+        for index_set in cand_indexes:
+            if len(deleted_terms) >= num_to_delete:
+                break
+            if len(deleted_terms) + len(index_set) > num_to_delete:
+                continue
+            is_any_index_covered = False
+            for index in index_set:
+                if index in covered_indexes:
+                    is_any_index_covered = True
+                    break
+            if is_any_index_covered:
+                continue
+            for index in index_set:
+                covered_indexes.add(index)
+                masked_token = "[term_del]"
+                output_tokens[index] = masked_token
+                deleted_terms.append((index, tokens[index]))
+        assert len(deleted_terms) <= num_to_delete
+        return " ".join(output_tokens)
+
     def __getitem__(self, idx):
         line = linecache.getline(self._filename, idx + 1)       # 获取指定行号的数据；linecache将对文件的操作映射到内存中，很方便
         line = line.strip().split(contras_sep_token)
@@ -129,15 +162,24 @@ class ContrasDataset(Dataset):
         qd_pairs2 = qd_pairs2.split("\t")   #[q1, d1, q2, d2, ....]
         #input_ids, attention_mask, segment_ids = self.anno_main(qd_pairs1)
         #input_ids2, attention_mask2, segment_ids2 = self.anno_main(qd_pairs2)
+
+        #TODO after sampling, apply a term deletion to enhance robustness
+        aug_sequence = []
+        for sent in qd_pairs2:
+            sent_aug = self._term_deletion(sent)
+            sent_aug += " "
+            sent_aug = re.sub(r'(\[term_del\] ){2,}', "[term_del] ", sent_aug)
+            sent_aug = sent_aug[:-1]
+            aug_sequence.append(sent_aug)
         input_ids, attention_mask, segment_ids = self.anno_endswith_q(qd_pairs1)        #!
-        input_ids2, attention_mask2, segment_ids2 = self.anno_endswith_q(qd_pairs2)     #!
+        input_ids2, attention_mask2, segment_ids2 = self.anno_endswith_q(aug_sequence)     #!
         batch = {
-            'input_ids1': input_ids, 
-            'token_type_ids1': segment_ids, 
-            'attention_mask1': attention_mask, 
-            'input_ids2': input_ids2, 
-            'token_type_ids2': segment_ids2, 
-            'attention_mask2': attention_mask2, 
+            'input_ids1': input_ids,
+            'token_type_ids1': segment_ids,
+            'attention_mask1': attention_mask,
+            'input_ids2': input_ids2,
+            'token_type_ids2': segment_ids2,
+            'attention_mask2': attention_mask2,
         }
         return batch
 
