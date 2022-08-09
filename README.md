@@ -27,6 +27,7 @@ requirements:
 - Pytorch 1.10.2 (with GPU support)
 - pytrec-eval 0.5
 - Transformers 4.2.0
+- setproctitle 1.3.1
 
 运行：
 ```

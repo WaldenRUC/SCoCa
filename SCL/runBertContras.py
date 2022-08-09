@@ -70,8 +70,9 @@ parser.add_argument("--device_id",
                     type=str,
                     help="GPU device id.")
 parser.add_argument("--multiGPU",
-                    action="store_true",
-                    help="是否用全部卡训练（默认多卡）")
+                    default="False",
+                    type=str,
+                    help="是否用多卡训练,<False>|<All>|<0,1>...")
 parser.add_argument("--scheduler_used",
                     action="store_true",
                     help="是否使用linear scheduler来递减学习率")
@@ -84,12 +85,22 @@ parser.add_argument("--tqdm",
                     help="是否使用tqdm进度条")
 args = parser.parse_args()
 #==========================#
-if args.multiGPU:    #占用所有的卡
-    args.batch_size = args.per_gpu_batch_size * torch.cuda.device_count()
-    args.test_batch_size = args.per_gpu_test_batch_size * torch.cuda.device_count()
-else:                          #单卡，用**device_id**指定
+if args.multiGPU == "False":    #单卡，用**device_id**指定
     args.batch_size = args.per_gpu_batch_size
     args.test_batch_size = args.per_gpu_test_batch_size
+elif args.multiGPU == "All":
+    args.batch_size = args.per_gpu_batch_size * torch.cuda.device_count()
+    args.test_batch_size = args.per_gpu_test_batch_size * torch.cuda.device_count()
+else:
+    try:
+        device_ids = args.multiGPU.split(",")   #"0,1" ==> ["0", "1"]
+        for device_id in device_ids:
+            device_id = int(device_id)
+        assert len(device_ids) >= 2
+        args.batch_size = args.per_gpu_batch_size * len(device_ids)
+        args.test_batch_size = args.per_gpu_test_batch_size * len(device_ids)
+    except Exception as e:
+        assert False
 #==========================#
 args.save_path += BertContrastive.__name__ + "." +  args.task + "." + str(args.epochs) + "." + str(int(args.temperature * 100)) + "." + str(args.per_gpu_batch_size) + "." + args.hint
 args.loss_path = args.log_path + BertContrastive.__name__ + "." + args.task + "." + args.hint + ".train_cl_loss.log"
@@ -101,10 +112,10 @@ loss_logger = open(args.loss_path, "a")
 device = torch.device(f"cuda:{args.device_id}")
 print(args, flush=True)
 print(torch.cuda.current_device(), flush=True)
-if args.multiGPU:
-    print("WARNING: use multiple gpus", flush=True)
-else:
+if args.multiGPU == "False":
     print("WARNING: use single gpu", flush=True)
+else:
+    print("WARNING: use multiple gpus", flush=True)
 logger.write("\n")
 logger.write("\nHyper-parameters:\n")
 args_dict = vars(args)
@@ -159,8 +170,13 @@ def train_model():
     n_params = sum([p.numel() for p in model.parameters() if p.requires_grad])
     print('* number of parameters: %d' % n_params, flush=True)
     model = model.to(device)
-    if args.multiGPU:
-        model = torch.nn.DataParallel(model)        #! 缺少device_ids参数，暂未修改
+    if args.multiGPU == "False":
+        pass
+    elif args.multiGPU == "All":
+        model = torch.nn.DataParallel(model)
+    else:
+        device_ids = list(map(int, args.multiGPU.split(",")))
+        model = torch.nn.DataParallel(model, device_ids=device_ids)
     fit(model, train_data, test_data)
 
 def train_step(model, train_data, loss_func):
@@ -258,7 +274,7 @@ def predict(model, X_test):
     y_test_acc = []
     with torch.no_grad():
         if args.tqdm:
-            epoch_iterator = tqdm(test_dataloader, ncols=80, leave=False)   #* leave=False: 执行后，清除进度条
+            epoch_iterator = tqdm(test_dataloader, ncols=120, leave=False)   #* leave=False: 执行后，清除进度条
         else:
             epoch_iterator = test_dataloader
         for i, test_data in enumerate(epoch_iterator):

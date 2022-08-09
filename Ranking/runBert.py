@@ -68,8 +68,9 @@ parser.add_argument("--log_path",
                     type=str,
                     help="The path to save log.")
 parser.add_argument("--multiGPU",
-                    action="store_true",
-                    help="是否使用多卡训练")
+                    default="False",
+                    type=str,
+                    help="是否使用多卡训练,<False>|<All>|<0,1>...")
 parser.add_argument("--hint",
                     type=str,
                     default="",
@@ -82,12 +83,22 @@ parser.add_argument("--tqdm",
                     help="是否使用tqdm进度条")
 args = parser.parse_args()
 #==========================*#
-if args.multiGPU: #用多卡训练
+if args.multiGPU == "False":    #单卡，用**device_id**指定
+    args.batch_size = args.per_gpu_batch_size
+    args.test_batch_size = args.per_gpu_test_batch_size
+elif args.multiGPU == "All":
     args.batch_size = args.per_gpu_batch_size * torch.cuda.device_count()
     args.test_batch_size = args.per_gpu_test_batch_size * torch.cuda.device_count()
 else:
-    args.batch_size = args.per_gpu_batch_size
-    args.test_batch_size = args.per_gpu_test_batch_size
+    try:
+        device_ids = args.multiGPU.split(",")   #"0,1" ==> ["0", "1"]
+        for device_id in device_ids:
+            device_id = int(device_id)
+        assert len(device_ids) >= 2
+        args.batch_size = args.per_gpu_batch_size * len(device_ids)
+        args.test_batch_size = args.per_gpu_test_batch_size * len(device_ids)
+    except Exception as e:
+        assert False
 #==========================*#
 result_path = "./Ranking/output/" + args.task + "/"
 args.save_path += BertSessionSearch.__name__ + "." +  args.task + "." + args.hint
@@ -99,6 +110,11 @@ setproctitle.setproctitle(args.hint)
 logger = open(args.log_path, "a")
 device = torch.device("cuda:%s" % (args.device_id))
 print(args, flush=True)
+print(torch.cuda.current_device(), flush=True)
+if args.multiGPU == "False":
+    print("WARNING: use single gpu", flush=True)
+else:
+    print("WARNING: use multiple gpus", flush=True)
 logger.write("\nHyper-parameters:\n")
 args_dict = vars(args)
 for k, v in args_dict.items():
@@ -146,8 +162,13 @@ def train_model():
     n_params = sum([p.numel() for p in model.parameters() if p.requires_grad])
     print('* number of parameters: %d' % n_params, flush=True)
     model = model.to(device)
-    if args.multiGPU:
+    if args.multiGPU == "False":
+        pass
+    elif args.multiGPU == "All":
         model = torch.nn.DataParallel(model)
+    else:
+        device_ids = list(map(int, args.multiGPU.split(",")))
+        model = torch.nn.DataParallel(model, device_ids=device_ids)
     fit(model, train_data, test_data)
 #=================================================*#
 def train_step(model, train_data, bce_loss):
@@ -290,8 +311,13 @@ def test_model():
     model_state_dict = torch.load(args.save_path)
     model.load_state_dict({k.replace('module.', ''):v for k, v in model_state_dict.items()})
     model = model.to(device)
-    if args.multiGPU:
+    if args.multiGPU == "False":
+        pass
+    elif args.multiGPU == "All":
         model = torch.nn.DataParallel(model)
+    else:
+        device_ids = list(map(int, args.multiGPU.split(",")))
+        model = torch.nn.DataParallel(model, device_ids=device_ids)
     if args.task == "aol":
         evaluate(model, predict_data, None, [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], is_test=True)
     elif args.task == "tiangong":
