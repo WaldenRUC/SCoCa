@@ -83,6 +83,10 @@ parser.add_argument("--hint",
 parser.add_argument("--tqdm",
                     action="store_true",
                     help="是否使用tqdm进度条")
+parser.add_argument('--data_dir',
+                    default="/data00/zhaoheng_huang/COCA/SCL/",
+                    type=str,
+                    help="数据存储目录")
 args = parser.parse_args()
 #==========================#
 if args.multiGPU == "False":    #单卡，用**device_id**指定
@@ -125,16 +129,16 @@ for k, v in args_dict.items():
     logger.flush()
 seq_max_len = 128
 if args.task == "aol":
-    train_data = "./SCL/data/aol/train.pos.txt"
-    test_data =  "./SCL/data/aol/dev.pos.txt"
+    train_data = args.data_dir + "data/aol/train.pos.txt"
+    test_data = args.data_dir + "data/aol/dev.pos.txt"
     tokenizer = BertTokenizer.from_pretrained(args.bert_model_path)
     additional_tokens = 3
     tokenizer.add_tokens("[eos]")
     tokenizer.add_tokens("[term_del]")
     tokenizer.add_tokens("[sent_del]")
 elif args.task == "tiangong":
-    train_data = "./SCL/data/tiangong/train.pos.txt"
-    test_data =  "./SCL/data/tiangong/dev.pos.txt"
+    train_data = args.data_dir + "data/tiangong/train.pos.txt"
+    test_data = args.data_dir + "data/tiangong/dev.pos.txt"
     tokenizer = BertTokenizer.from_pretrained(args.bert_model_path)
     additional_tokens = 4
     tokenizer.add_tokens("[eos]")

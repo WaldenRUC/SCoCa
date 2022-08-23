@@ -74,6 +74,10 @@ parser.add_argument("--multiGPU",
 parser.add_argument('--device_id',
                     type=str,
                     default="0")
+parser.add_argument('--data_dir',
+                    type=str,
+                    default="/data00/zhaoheng_huang/COCA/Ranking/",
+                    help="数据存储目录")
 args = parser.parse_args()
 if args.multiGPU == "False":    #单卡，用**device_id**指定
     args.batch_size = args.per_gpu_batch_size
@@ -91,7 +95,7 @@ else:
         args.test_batch_size = args.per_gpu_test_batch_size * len(device_ids)
     except Exception as e:
         assert False
-result_path = "./Ranking/output/" + args.task + "/"
+result_path = args.data_dir + "output/" + args.task + "/"
 args.save_path += BertSessionSearch.__name__ + "." +  args.task + "." + args.hint
 args.log_path += BertSessionSearch.__name__ + "." + args.task + ".log"
 score_file_prefix = result_path + BertSessionSearch.__name__ + "." + args.task
@@ -115,19 +119,19 @@ for k, v in args_dict.items():
 max_seq_len = 128
 
 if args.task == "aol":
-    train_data = "./Ranking/data/aol/train_line.txt"
-    test_data = "./Ranking/data/aol/test_line.middle.txt"
-    predict_data = "./Ranking/data/aol/test_line.txt"
+    train_data = args.data_dir + "data/aol/train_line.txt"
+    test_data = args.data_dir + "data/aol/test_line.middle.txt"
+    predict_data = args.data_dir + "data/aol/test_line.txt"
     tokenizer = BertTokenizer.from_pretrained(args.bert_model_path)
     additional_tokens = 3
     tokenizer.add_tokens("[eos]")
     tokenizer.add_tokens("[term_del]")
     tokenizer.add_tokens("[sent_del]")
 elif args.task == "tiangong":
-    train_data = "./Ranking/data/tiangong/train.point.txt"
-    test_data = "./Ranking/data/tiangong/dev.point.txt"
-    predict_last_data = "./Ranking/data/tiangong/test.point.lastq.txt"
-    predict_pre_data = "./Ranking/data/tiangong/test.point.preq.txt"
+    train_data = args.data_dir + "data/tiangong/train.point.txt"
+    test_data = args.data_dir + "data/tiangong/dev.point.txt"
+    predict_last_data = args.data_dir + "data/tiangong/test.point.lastq.txt"
+    predict_pre_data = args.data_dir + "data/tiangong/test.point.preq.txt"
     tokenizer = BertTokenizer.from_pretrained(args.bert_model_path)
     additional_tokens = 4
     tokenizer.add_tokens("[eos]")

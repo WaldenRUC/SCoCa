@@ -6,4 +6,5 @@ python -u ./Ranking/runBert.py \
     --pretrain_model_path ./SCL/model/BertContrastive.aol.4.10.128.COCA_pretrain_mixedSCL_collected_woSched \
     --tqdm \
     --multiGPU "0,1,2,3" \
-    --hint "Ranking"
+    --hint "Ranking" \
+    --data_dir /data00/zhaoheng_huang/COCA/Ranking/

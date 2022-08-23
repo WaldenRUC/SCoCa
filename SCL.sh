@@ -7,4 +7,5 @@ python -u ./SCL/runBertContras.py \
     --hint "SCL" \
     --tqdm \
     --per_gpu_batch_size 128 \
-    --per_gpu_test_batch_size 256
+    --per_gpu_test_batch_size 256 \
+    --data_dir /data00/zhaoheng_huang/COCA/SCL/
