@@ -1,4 +1,3 @@
-import torch
 import torch.nn as nn
 import torch.nn.init as init
 
@@ -10,6 +9,7 @@ class BertSessionSearch(nn.Module):
         self.relu = nn.ReLU()
         self.dropout = nn.Dropout(0.1)
         init.xavier_normal_(self.classifier.weight)
+    
     def forward(self, batch_data):
         """
         Args:

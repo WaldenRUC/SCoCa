@@ -1,4 +1,4 @@
-# SCoCa
+# SCoCa Version 3.0
 
 需要补充以下数据文件：（tiangong暂时不需补充）
 1. ./BERT/BERTChinese/
@@ -31,9 +31,9 @@ requirements:
 
 运行：
 ```
-bash ./SCL/run.sh
+bash Ranking.sh
 ```
 或
 ```
-bash ./Ranking/run.sh
+bash SCL.sh
 ```

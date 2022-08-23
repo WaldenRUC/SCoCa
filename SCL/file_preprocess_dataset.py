@@ -6,12 +6,13 @@ import random
 import re
 contras_sep_token = "[####]"
 class ContrasDataset(Dataset):
-    def __init__(self, filename, max_seq_length, tokenizer):
+    def __init__(self, filename, max_seq_length, tokenizer, aug_strategy = ["sent_deletion", "term_deletion", "qd_reorder"]):
         super(ContrasDataset, self).__init__()
         self._filename = filename
         self._max_seq_length = max_seq_length
         self._tokenizer = tokenizer
         self._rnd = random.Random(0)
+        self._aug_strategy = aug_strategy
         with open(filename, "r") as f:
             self._total_data = len(f.readlines())
 
@@ -119,7 +120,7 @@ class ContrasDataset(Dataset):
         segment_ids = np.asarray(segment_ids)
         return input_ids, all_attention_mask, segment_ids
 
-    def _term_deletion(self, sent, ratio=0.35):
+    def _term_deletion(self, sent, ratio=0.6):
         tokens = sent.split()
         num_to_delete = int(round(len(tokens) * ratio))
         cand_indexes = []
@@ -151,37 +152,104 @@ class ContrasDataset(Dataset):
                 deleted_terms.append((index, tokens[index]))
         assert len(deleted_terms) <= num_to_delete
         return " ".join(output_tokens)
-
+    def augmentation(self, sequence, strategy):
+        sent_del_ratio = 0.6
+        random_positions = -1
+        if strategy == "sent_deletion":     #! 随机删除q或d, 删除后用[sent_del]替代
+            random_num = int(len(sequence) * sent_del_ratio)
+            random_positions = self._rnd.sample(list(range(len(sequence))), random_num)
+            for random_position in random_positions:
+                sequence[random_position] = "[sent_del]"
+            aug_sequence = sequence
+        elif strategy == "term_deletion":
+            aug_sequence = []
+            for sent in sequence:
+                sent_aug = self._term_deletion(sent)
+                sent_aug += " "
+                sent_aug = re.sub(r'(\[term_del\] ){2,}', "[term_del] ", sent_aug)
+                sent_aug = sent_aug[:-1]
+                aug_sequence.append(sent_aug)
+        elif strategy == "qd_reorder":          #! [q1, d1, q2, d2, ...] => [q2, d2, q1, d1, ...]
+            change_pos = self._rnd.sample(list(range(len(sequence) // 2)), 2)
+            aug_sequence = sequence.copy()
+            tmp = sequence[change_pos[1] * 2:change_pos[1] * 2 + 2]
+            aug_sequence[change_pos[1] * 2:change_pos[1] * 2 + 2] = sequence[change_pos[0] * 2:change_pos[0] * 2 + 2]
+            aug_sequence[change_pos[0] * 2:change_pos[0] * 2 + 2] = tmp
+        else:
+            assert False
+        return aug_sequence, random_positions
     def __getitem__(self, idx):
-        line = linecache.getline(self._filename, idx + 1)       # 获取指定行号的数据；linecache将对文件的操作映射到内存中，很方便
+        line = linecache.getline(self._filename, idx + 1)       # 获取指定行号的数据；linecache将对文件的操作映射到内存中
         line = line.strip().split(contras_sep_token)
-        assert len(line) == 2
-        qd_pairs1 = line[0].strip()
-        qd_pairs2 = line[1].strip()
+        assert len(line) == 3       # version: 0815
+        qd_pairs1 = line[1].strip()
+        qd_pairs2 = line[2].strip()
         qd_pairs1 = qd_pairs1.split("\t")   #[q1, d1, q2, d2, ....]
         qd_pairs2 = qd_pairs2.split("\t")   #[q1, d1, q2, d2, ....]
-        #input_ids, attention_mask, segment_ids = self.anno_main(qd_pairs1)
-        #input_ids2, attention_mask2, segment_ids2 = self.anno_main(qd_pairs2)
-
-        #TODO after sampling, apply a term deletion to enhance robustness
-        aug_sequence = []
-        for sent in qd_pairs2:
-            sent_aug = self._term_deletion(sent)
-            sent_aug += " "
-            sent_aug = re.sub(r'(\[term_del\] ){2,}', "[term_del] ", sent_aug)
-            sent_aug = sent_aug[:-1]
-            aug_sequence.append(sent_aug)
-        input_ids, attention_mask, segment_ids = self.anno_endswith_q(qd_pairs1)        #!
-        input_ids2, attention_mask2, segment_ids2 = self.anno_endswith_q(aug_sequence)     #!
-        batch = {
-            'input_ids1': input_ids,
-            'token_type_ids1': segment_ids,
-            'attention_mask1': attention_mask,
-            'input_ids2': input_ids2,
-            'token_type_ids2': segment_ids2,
-            'attention_mask2': attention_mask2,
-        }
-        return batch
+        if line[0] == "Point":      # 自我掩码对比学习，同coca
+            random_qd_pairs1 = qd_pairs1.copy()
+            random_qd_pairs2 = qd_pairs2.copy()
+            if len(qd_pairs1) <= 2:
+                aug_strategy = ["sent_deletion", "term_deletion"]
+            else:
+                aug_strategy = self._aug_strategy
+            strategy1 = self._rnd.choice(aug_strategy)
+            random_qd_pairs1, random_pos1 = self.augmentation(random_qd_pairs1, strategy1)
+            strategy2 = self._rnd.choice(aug_strategy)
+            random_qd_pairs2, random_pos2 = self.augmentation(random_qd_pairs2, strategy2)
+            while random_pos1 == random_pos2 or strategy1 == strategy2:
+                strategy2 = self._rnd.choice(aug_strategy)
+                random_qd_pairs2 = qd_pairs2.copy()
+                random_qd_pairs2, random_pos2 = self.augmentation(random_qd_pairs2, strategy2)
+            input_ids, attention_mask, segment_ids = self.anno_main(random_qd_pairs1)
+            input_ids2, attention_mask2, segment_ids2 = self.anno_main(random_qd_pairs2)
+            batch = {
+                'input_ids1': input_ids,
+                'token_type_ids1': segment_ids,
+                'attention_mask1': attention_mask,
+                'input_ids2': input_ids2,
+                'token_type_ids2': segment_ids2,
+                'attention_mask2': attention_mask2,
+            }
+            return batch
+        elif line[0] == "qRep":
+            # after sampling, apply a term deletion to enhance robustness
+            aug_sequence = []
+            for index, sent in enumerate(qd_pairs2):
+                if index % 2 == 0:  # q
+                    aug_sequence.append(sent)
+                else:       # d
+                    sent_aug = self._term_deletion(sent)
+                    sent_aug += " "
+                    sent_aug = re.sub(r'(\[term_del\] ){2,}', "[term_del] ", sent_aug)
+                    sent_aug = sent_aug[:-1]
+                    aug_sequence.append(sent_aug)
+            input_ids, attention_mask, segment_ids = self.anno_main(qd_pairs1)
+            input_ids2, attention_mask2, segment_ids2 = self.anno_main(aug_sequence)
+            batch = {
+                'input_ids1': input_ids,
+                'token_type_ids1': segment_ids,
+                'attention_mask1': attention_mask,
+                'input_ids2': input_ids2,
+                'token_type_ids2': segment_ids2,
+                'attention_mask2': attention_mask2,
+            }
+            return batch
+        elif line[0] == "coClick":
+            assert len(qd_pairs1) % 2 == 1 and len(qd_pairs2) % 2 == 1
+            input_ids, attention_mask, segment_ids = self.anno_endswith_q(qd_pairs1)
+            input_ids2, attention_mask2, segment_ids2 = self.anno_endswith_q(qd_pairs2)
+            batch = {
+                'input_ids1': input_ids,
+                'token_type_ids1': segment_ids,
+                'attention_mask1': attention_mask,
+                'input_ids2': input_ids2,
+                'token_type_ids2': segment_ids2,
+                'attention_mask2': attention_mask2,
+            }
+            return batch
+        else:
+            assert False
 
     def __len__(self):
         return self._total_data

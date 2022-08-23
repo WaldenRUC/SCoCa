@@ -1,3 +1,0 @@
-BERTChinese
-
-BERTModel

@@ -9,6 +9,7 @@ from transformers import BertTokenizer, BertModel, get_linear_schedule_with_warm
 from file_preprocess_dataset import ContrasDataset
 from tqdm import tqdm
 import os, setproctitle
+import torch.nn.functional as F
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--training",
@@ -19,7 +20,7 @@ parser.add_argument("--per_gpu_batch_size",
                     type=int,
                     help="The batch size.")
 parser.add_argument("--per_gpu_test_batch_size",
-                    default=128,
+                    default=256,
                     type=int,
                     help="The batch size.")
 parser.add_argument("--learning_rate",
@@ -38,10 +39,6 @@ parser.add_argument("--epochs",
                     default=4,
                     type=int,
                     help="Total number of training epochs to perform.")
-parser.add_argument("--data_dir",
-                    default="./SCL/data/",
-                    type=str,
-                    help="The path of the data.")
 parser.add_argument("--save_path",
                     default="./SCL/model/",
                     type=str,
@@ -59,7 +56,7 @@ parser.add_argument("--log_path",
                     type=str,
                     help="The path to save log.")
 parser.add_argument("--bert_model_path",
-                    default="./BERT/BertModel/",
+                    default="./BERT/BERTModel/",
                     type=str,
                     help="The path to BERT model.")
 parser.add_argument("--pretrain_model_path",
@@ -76,6 +73,9 @@ parser.add_argument("--multiGPU",
 parser.add_argument("--scheduler_used",
                     action="store_true",
                     help="是否使用linear scheduler来递减学习率")
+parser.add_argument('--use_pretrain_model',
+                    action='store_true',
+                    help="是否使用无监督预训练模型")
 parser.add_argument("--hint",
                     type=str,
                     default="",
@@ -101,7 +101,6 @@ else:
         args.test_batch_size = args.per_gpu_test_batch_size * len(device_ids)
     except Exception as e:
         assert False
-#==========================#
 args.save_path += BertContrastive.__name__ + "." +  args.task + "." + str(args.epochs) + "." + str(int(args.temperature * 100)) + "." + str(args.per_gpu_batch_size) + "." + args.hint
 args.loss_path = args.log_path + BertContrastive.__name__ + "." + args.task + "." + args.hint + ".train_cl_loss.log"
 args.log_path += BertContrastive.__name__ + "." + args.task + ".log"
@@ -117,24 +116,25 @@ if args.multiGPU == "False":
 else:
     print("WARNING: use multiple gpus", flush=True)
 logger.write("\n")
+logger.flush()
 logger.write("\nHyper-parameters:\n")
+logger.flush()
 args_dict = vars(args)
 for k, v in args_dict.items():
     logger.write(str(k) + "\t" + str(v) + "\n")
-logger.write("HINT" + "\t" + args.hint)
+    logger.flush()
 seq_max_len = 128
-#==========================#
 if args.task == "aol":
-    train_data = args.data_dir + "aol/train.pos.txt"
-    test_data =  args.data_dir + "aol/dev.pos.txt"
+    train_data = "./SCL/data/aol/train.pos.txt"
+    test_data =  "./SCL/data/aol/dev.pos.txt"
     tokenizer = BertTokenizer.from_pretrained(args.bert_model_path)
     additional_tokens = 3
     tokenizer.add_tokens("[eos]")
     tokenizer.add_tokens("[term_del]")
     tokenizer.add_tokens("[sent_del]")
 elif args.task == "tiangong":
-    train_data = args.data_dir + "tiangong/train.pos.txt"
-    test_data =  args.data_dir + "tiangong/dev.pos.txt"
+    train_data = "./SCL/data/tiangong/train.pos.txt"
+    test_data =  "./SCL/data/tiangong/dev.pos.txt"
     tokenizer = BertTokenizer.from_pretrained(args.bert_model_path)
     additional_tokens = 4
     tokenizer.add_tokens("[eos]")
@@ -153,7 +153,6 @@ def set_seed(seed=0):
     # some cudnn methods can be random even after fixing the seed
     # unless you tell it to be deterministic
     torch.backends.cudnn.deterministic = True
-#=================================================#
 def train_model():
     # load model
     '''
@@ -164,8 +163,9 @@ def train_model():
     '''
     bert_model = BertModel.from_pretrained(args.bert_model_path)
     bert_model.resize_token_embeddings(bert_model.config.vocab_size + additional_tokens)
-    model_state_dict = torch.load(args.pretrain_model_path, map_location="cuda:%s"%(args.device_id))
-    bert_model.load_state_dict({k.replace('bert_model.', ''):v for k, v in model_state_dict.items()}, strict=False)
+    if args.use_pretrain_model:
+        model_state_dict = torch.load(args.pretrain_model_path, map_location="cuda:%s"%(args.device_id))
+        bert_model.load_state_dict({k.replace('bert_model.', ''):v for k, v in model_state_dict.items()}, strict=False)
     model = BertContrastive(bert_model, args=args, temperature=args.temperature)
     n_params = sum([p.numel() for p in model.parameters() if p.requires_grad])
     print('* number of parameters: %d' % n_params, flush=True)
@@ -183,7 +183,38 @@ def train_step(model, train_data, loss_func):
     with torch.no_grad():
         for key in train_data.keys():
             train_data[key] = train_data[key].to(device)
+    """
     contras_loss, acc = model.forward(train_data)
+    return contras_loss, acc
+    """
+    sent_rep1, sent_norm1, sent_rep2, sent_norm2 = model.forward(train_data)
+    # 这里已经collect所有卡的scalar了
+    size = sent_rep1.shape[0]
+    batch_self_11 = torch.einsum("ad,bd->ab", sent_rep1, sent_rep1) / (torch.einsum("ad,bd->ab", sent_norm1, sent_norm1) + 1e-6)
+    batch_cross_12 = torch.einsum("ad,bd->ab", sent_rep1, sent_rep2) / (torch.einsum("ad,bd->ab", sent_norm1, sent_norm2) + 1e-6)  # [batch, batch]
+    batch_self_11 = batch_self_11 / args.temperature
+    batch_cross_12 = batch_cross_12 / args.temperature
+    batch_first = torch.cat([batch_self_11, batch_cross_12], dim=-1)  # [batch, batch * 2]
+    if args.multiGPU == "False":    # 单卡
+        batch_arange = torch.arange(size).to("cuda:%s"%(args.device_id))
+    else:
+        batch_arange = torch.arange(size).to(torch.cuda.current_device())
+    mask = F.one_hot(batch_arange, num_classes=size * 2) * -1e10
+    batch_first += mask
+    batch_label1 = batch_arange + size  # [batch]
+    batch_self_22 = torch.einsum("ad,bd->ab", sent_rep2, sent_rep2) / (torch.einsum("ad,bd->ab", sent_norm2, sent_norm2) + 1e-6)  # [batch, batch]
+    batch_cross_21 = torch.einsum("ad,bd->ab", sent_rep2, sent_rep1) / (torch.einsum("ad,bd->ab", sent_norm2, sent_norm1) + 1e-6)  # [batch, batch]
+    batch_self_22 = batch_self_22 / args.temperature
+    batch_cross_21 = batch_cross_21 / args.temperature
+    batch_second = torch.cat([batch_self_22, batch_cross_21], dim=-1)  # [batch, batch * 2]
+    batch_second += mask
+    batch_label2 = batch_arange + size  # [batch]
+    batch_predict = torch.cat([batch_first, batch_second], dim=0)
+    batch_label = torch.cat([batch_label1, batch_label2], dim=0)  # [batch * 2]
+    cl_loss = torch.nn.CrossEntropyLoss(reduction='none')
+    contras_loss = cl_loss(batch_predict, batch_label)     #多分类
+    batch_logit = batch_predict.argmax(dim=-1)
+    acc = torch.sum(batch_logit == batch_label).float() / (size * 2)
     return contras_loss, acc
 
 def fit(model, X_train, X_test):
@@ -210,6 +241,7 @@ def fit(model, X_train, X_test):
         else:
             epoch_iterator = train_dataloader
         for i, training_data in enumerate(epoch_iterator):
+            #if args.multiGPU
             loss, acc = train_step(model, training_data, bce_loss)
             loss = loss.mean()
             acc = acc.mean()
@@ -262,7 +294,6 @@ def evaluate(model, X_test, best_result, is_test=False):
         logger.flush()
         model_to_save = model.module if hasattr(model, 'module') else model
         torch.save(model_to_save.state_dict(), args.save_path)
-    
     return best_result
 
 def predict(model, X_test):
@@ -274,14 +305,45 @@ def predict(model, X_test):
     y_test_acc = []
     with torch.no_grad():
         if args.tqdm:
-            epoch_iterator = tqdm(test_dataloader, ncols=120, leave=False)   #* leave=False: 执行后，清除进度条
+            epoch_iterator = tqdm(test_dataloader, ncols=100, leave=False)   #* leave=False: 执行后，清除进度条
         else:
             epoch_iterator = test_dataloader
         for i, test_data in enumerate(epoch_iterator):
             with torch.no_grad():
                 for key in test_data.keys():
                     test_data[key] = test_data[key].to(device)
+            '''
             test_loss, test_acc = model.forward(test_data)
+            '''
+            sent_rep1, sent_norm1, sent_rep2, sent_norm2 = model.forward(test_data)
+            size = sent_rep1.shape[0]
+            # 这里已经collect所有卡的scalar了
+            batch_self_11 = torch.einsum("ad,bd->ab", sent_rep1, sent_rep1) / (torch.einsum("ad,bd->ab", sent_norm1, sent_norm1) + 1e-6)
+            batch_cross_12 = torch.einsum("ad,bd->ab", sent_rep1, sent_rep2) / (torch.einsum("ad,bd->ab", sent_norm1, sent_norm2) + 1e-6)  # [batch, batch]
+            batch_self_11 = batch_self_11 / args.temperature
+            batch_cross_12 = batch_cross_12 / args.temperature
+            batch_first = torch.cat([batch_self_11, batch_cross_12], dim=-1)  # [batch, batch * 2]
+            if args.multiGPU == "False":    # 单卡
+                batch_arange = torch.arange(size).to("cuda:%s"%(args.device_id))
+            else:
+                batch_arange = torch.arange(size).to(torch.cuda.current_device())
+            mask = F.one_hot(batch_arange, num_classes=size * 2) * -1e10
+            batch_first += mask
+            batch_label1 = batch_arange + size  # [batch]
+            batch_self_22 = torch.einsum("ad,bd->ab", sent_rep2, sent_rep2) / (torch.einsum("ad,bd->ab", sent_norm2, sent_norm2) + 1e-6)  # [batch, batch]
+            batch_cross_21 = torch.einsum("ad,bd->ab", sent_rep2, sent_rep1) / (torch.einsum("ad,bd->ab", sent_norm2, sent_norm1) + 1e-6)  # [batch, batch]
+            batch_self_22 = batch_self_22 / args.temperature
+            batch_cross_21 = batch_cross_21 / args.temperature
+            batch_second = torch.cat([batch_self_22, batch_cross_21], dim=-1)  # [batch, batch * 2]
+            batch_second += mask
+            batch_label2 = batch_arange + size  # [batch]
+            batch_predict = torch.cat([batch_first, batch_second], dim=0)
+            batch_label = torch.cat([batch_label1, batch_label2], dim=0)  # [batch * 2]
+            cl_loss = torch.nn.CrossEntropyLoss(reduction='none')
+            test_loss = cl_loss(batch_predict, batch_label)     #多分类
+            batch_logit = batch_predict.argmax(dim=-1)
+            test_acc = torch.sum(batch_logit == batch_label).float() / (size * 2)
+
             test_loss = test_loss.mean()
             test_acc = test_acc.mean()
             y_test_loss.append(test_loss.item())
