@@ -1,4 +1,4 @@
-# SCoCa Version 3.0
+# SCoCa Version 3.0.1
 
 需要补充以下数据文件：（tiangong暂时不需补充）
 1. ./BERT/BERTChinese/

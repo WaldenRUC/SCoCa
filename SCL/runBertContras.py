@@ -300,7 +300,7 @@ def predict(model, X_test):
     model.eval()
     test_loss = []
     test_dataset = ContrasDataset(X_test, 128, tokenizer)
-    test_dataloader = DataLoader(test_dataset, batch_size=args.test_batch_size, shuffle=False, num_workers=8)
+    test_dataloader = DataLoader(test_dataset, batch_size=args.test_batch_size, shuffle=True, num_workers=8)
     y_test_loss = []
     y_test_acc = []
     with torch.no_grad():
