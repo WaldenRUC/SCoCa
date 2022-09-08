@@ -1,10 +1,10 @@
-source /data00/zhaoheng_huang/anaconda3/bin/activate /data00/zhaoheng_huang/anaconda3/envs/py38
+source /data1/zhaoheng_huang/anaconda3/bin/activate /data1/zhaoheng_huang/anaconda3/envs/coca
 python -u ./Ranking/runBert.py \
     --task aol \
-    --per_gpu_batch_size 64 \
-    --per_gpu_test_batch_size 128 \
-    --pretrain_model_path ./SCL/model/BertContrastive.aol.4.10.128.COCA_pretrain_mixedSCL_collected_woSched \
+    --per_gpu_batch_size 32 \
+    --per_gpu_test_batch_size 64 \
+    --pretrain_model_path /data1/zhaoheng_huang/COCA/SCL/model/BertContrastive.aol.5.10.128.Point_task12_128_6 \
     --tqdm \
-    --multiGPU "0,1,2,3" \
+    --multiGPU "All" \
     --hint "Ranking" \
-    --data_dir /data00/zhaoheng_huang/COCA/Ranking/
+    --data_dir /data1/zhaoheng_huang/COCA/Ranking/

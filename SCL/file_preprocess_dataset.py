@@ -5,6 +5,7 @@ import numpy as np
 import random
 import re
 contras_sep_token = "[####]"
+deletion_ratio = 0.6
 class ContrasDataset(Dataset):
     def __init__(self, filename, max_seq_length, tokenizer, aug_strategy = ["sent_deletion", "term_deletion", "qd_reorder"]):
         super(ContrasDataset, self).__init__()
@@ -120,7 +121,7 @@ class ContrasDataset(Dataset):
         segment_ids = np.asarray(segment_ids)
         return input_ids, all_attention_mask, segment_ids
 
-    def _term_deletion(self, sent, ratio=0.6):
+    def _term_deletion(self, sent, ratio=deletion_ratio):
         tokens = sent.split()
         num_to_delete = int(round(len(tokens) * ratio))
         cand_indexes = []
@@ -153,7 +154,7 @@ class ContrasDataset(Dataset):
         assert len(deleted_terms) <= num_to_delete
         return " ".join(output_tokens)
     def augmentation(self, sequence, strategy):
-        sent_del_ratio = 0.6
+        sent_del_ratio = deletion_ratio
         random_positions = -1
         if strategy == "sent_deletion":     #! 随机删除q或d, 删除后用[sent_del]替代
             random_num = int(len(sequence) * sent_del_ratio)
@@ -212,8 +213,9 @@ class ContrasDataset(Dataset):
                 'attention_mask2': attention_mask2,
             }
             return batch
-        elif line[0] == "qRep":
+        elif line[0] == "Rep":
             # after sampling, apply a term deletion to enhance robustness
+            '''
             aug_sequence = []
             for index, sent in enumerate(qd_pairs2):
                 if index % 2 == 0:  # q
@@ -224,8 +226,9 @@ class ContrasDataset(Dataset):
                     sent_aug = re.sub(r'(\[term_del\] ){2,}', "[term_del] ", sent_aug)
                     sent_aug = sent_aug[:-1]
                     aug_sequence.append(sent_aug)
+            '''
             input_ids, attention_mask, segment_ids = self.anno_main(qd_pairs1)
-            input_ids2, attention_mask2, segment_ids2 = self.anno_main(aug_sequence)
+            input_ids2, attention_mask2, segment_ids2 = self.anno_main(qd_pairs2)
             batch = {
                 'input_ids1': input_ids,
                 'token_type_ids1': segment_ids,

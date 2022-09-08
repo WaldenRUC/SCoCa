@@ -15,6 +15,10 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--training",
                     action="store_true",
                     help="Training model or evaluating model?")
+parser.add_argument("--task",
+                    default="aol",
+                    type=str,
+                    help="Task")
 parser.add_argument("--per_gpu_batch_size",
                     default=128,
                     type=int,
@@ -31,12 +35,8 @@ parser.add_argument("--temperature",
                     default=0.1,
                     type=float,
                     help="The temperature for CL.")
-parser.add_argument("--task",
-                    default="aol",
-                    type=str,
-                    help="Task")
 parser.add_argument("--epochs",
-                    default=4,
+                    default=10,
                     type=int,
                     help="Total number of training epochs to perform.")
 parser.add_argument("--save_path",
@@ -192,7 +192,7 @@ def train_step(model, train_data, loss_func):
     return contras_loss, acc
     """
     sent_rep1, sent_norm1, sent_rep2, sent_norm2 = model.forward(train_data)
-    # 这里已经collect所有卡的scalar了
+    # 这里返回时已经collect所有卡的scalar，并回到device:0上了
     size = sent_rep1.shape[0]
     batch_self_11 = torch.einsum("ad,bd->ab", sent_rep1, sent_rep1) / (torch.einsum("ad,bd->ab", sent_norm1, sent_norm1) + 1e-6)
     batch_cross_12 = torch.einsum("ad,bd->ab", sent_rep1, sent_rep2) / (torch.einsum("ad,bd->ab", sent_norm1, sent_norm2) + 1e-6)  # [batch, batch]

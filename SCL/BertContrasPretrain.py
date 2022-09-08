@@ -18,11 +18,13 @@ class BertContrastive(nn.Module):
         token_type_ids1 = batch_data["token_type_ids1"]
         bert_inputs1 = {'input_ids': input_ids1, 'attention_mask': attention_mask1, 'token_type_ids': token_type_ids1}
         sent_rep1 = self.bert_model(**bert_inputs1)[1]
+
         input_ids2 = batch_data["input_ids2"]
         attention_mask2 = batch_data["attention_mask2"]
         token_type_ids2 = batch_data["token_type_ids2"]
         bert_inputs2 = {'input_ids': input_ids2, 'attention_mask': attention_mask2, 'token_type_ids': token_type_ids2}
         sent_rep2 = self.bert_model(**bert_inputs2)[1]
+        
         sent_norm1 = sent_rep1.norm(dim=-1, keepdim=True)  # sqrt(x1^2 + x2^2 + ...)
         sent_norm2 = sent_rep2.norm(dim=-1, keepdim=True)
         # sent_rep1: [bs, 768]; sent_norm1: [bs, 1]
