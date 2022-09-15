@@ -99,10 +99,9 @@ else:
         args.test_batch_size = args.per_gpu_test_batch_size * len(device_ids)
     except Exception as e:
         assert False
-result_path = args.output_path + args.task + "/"
 args.save_path += BertSessionSearch.__name__ + "." +  args.task + "." + args.hint
 args.log_path += BertSessionSearch.__name__ + "." + args.task + ".log"
-score_file_prefix = result_path + BertSessionSearch.__name__ + "." + args.task
+score_file_prefix = args.output_path + BertSessionSearch.__name__ + "." + args.task
 args.score_file_path = score_file_prefix + "." + args.hint +  "." + args.score_file_path
 args.score_file_pre_path = score_file_prefix + "." + args.hint + "." +  args.score_file_pre_path
 setproctitle.setproctitle(args.hint)
