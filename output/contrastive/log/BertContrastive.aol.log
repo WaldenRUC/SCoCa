@@ -1,0 +1,60 @@
+
+
+Hyper-parameters:
+training	True
+task	aol
+per_gpu_batch_size	128
+per_gpu_test_batch_size	128
+learning_rate	5e-05
+temperature	0.1
+epochs	5
+save_path	/cache/output/contrastive/models/BertContrastive.aol.5.10.128.Point_task12_128_8
+output_path	/cache/output/contrastive/result/
+score_file_path	/cache/output/contrastive/result/BertContrastive.aol.Point_task12_128_8.score_file.txt
+log_path	/cache/output/contrastive/log/BertContrastive.aol.log
+bert_model_path	/cache/pretrained_model/BertBase/
+pretrain_model_path	/cache/code/CLModel/BertContrastive.aol
+device_id	0
+multiGPU	All
+scheduler_used	False
+use_pretrain_model	False
+hint	Point_task12_128_8
+tqdm	False
+data_dir	/cache/code/SCL/
+batch_size	1024
+test_batch_size	1024
+loss_path	/cache/output/contrastive/log/BertContrastive.aol.Point_task12_128_8.train_cl_loss.log
+Epoch 1/5
+Best Result: Loss: 1.1960 Acc: 0.8131
+Best Result: Loss: 1.0543 Acc: 0.8325
+Best Result: Loss: 0.9846 Acc: 0.8394
+Best Result: Loss: 0.9440 Acc: 0.8447
+Best Result: Loss: 0.9147 Acc: 0.8477
+Best Result: Loss: 0.9132 Acc: 0.8476
+Epoch 2/5
+Best Result: Loss: 0.8946 Acc: 0.8499
+Best Result: Loss: 0.8771 Acc: 0.8518
+Best Result: Loss: 0.8636 Acc: 0.8527
+Best Result: Loss: 0.8458 Acc: 0.8541
+Best Result: Loss: 0.8387 Acc: 0.8548
+Best Result: Loss: 0.8384 Acc: 0.8551
+Epoch 3/5
+Best Result: Loss: 0.8271 Acc: 0.8560
+Best Result: Loss: 0.8203 Acc: 0.8562
+Best Result: Loss: 0.8128 Acc: 0.8575
+Best Result: Loss: 0.8017 Acc: 0.8581
+Best Result: Loss: 0.8006 Acc: 0.8595
+Best Result: Loss: 0.7999 Acc: 0.8594
+Epoch 4/5
+Best Result: Loss: 0.7956 Acc: 0.8580
+Best Result: Loss: 0.7892 Acc: 0.8601
+Best Result: Loss: 0.7837 Acc: 0.8595
+Best Result: Loss: 0.7770 Acc: 0.8604
+Best Result: Loss: 0.7761 Acc: 0.8605
+Epoch 5/5
+Best Result: Loss: 0.7707 Acc: 0.8620
+Best Result: Loss: 0.7666 Acc: 0.8611
+Best Result: Loss: 0.7644 Acc: 0.8609
+Best Result: Loss: 0.7618 Acc: 0.8619
+Best Result: Loss: 0.7569 Acc: 0.8628
+Best Result: Loss: 0.7558 Acc: 0.8628
